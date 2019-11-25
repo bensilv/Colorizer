@@ -10,6 +10,8 @@ import random
 
 EPOCHS = 10
 
+
+
 class Colorizer(tf.keras.Model):
 	def __init__(self):
 		"""
@@ -57,58 +59,38 @@ class Colorizer(tf.keras.Model):
 
 		self.conv8_313 = tf.keras.layers.Conv2D(filters=313, kernel_size=1, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
 
-	def normalize(self, inputs):
+	def normalize(inputs):
 		mean, variance = tf.nn.moments(inputs, axes=[0, 1, 2])
 		return tf.nn.batch_normalization(inputs, mean, variance, None, None, 0.001)
 
-	def call(self, inputs, is_testing=False):
+	def f_t_function(self, z):
+		"""
+		Runs a forward pass on an input batch of images.
+		:param z: a array representing the probability of each pixel being in different color bins. Dims: (h, w, num_bins)
+		:return: logits - a matrix of shape (num_inputs, num_classes); during training, it would be (batch_size, 2)
+		"""
+		z_exponent = tf.math.exp(tf.math.log(z) / self.T)
+		z_sum = tf.reduce_sum(z_exponent, axis=2)
+		return z_exponent / z_sum
+
+	def h_function(self, prob_z):
+		return tf.reduce_sum(tf.dot(prob_z, self.f_t_function(prob_z)), axis=2)
+
+	def call(self, inputs):
 		"""
 		Runs a forward pass on an input batch of images.
 		:param inputs: images, shape of (num_inputs, 32, 32, 3); during training, the shape is (batch_size, 32, 32, 3)
-		:param is_testing: a boolean that should be set to True only when you're doing Part 2 of the assignment and this function is being called during testing
 		:return: logits - a matrix of shape (num_inputs, num_classes); during training, it would be (batch_size, 2)
 		"""
-		# Remember that
-		# shape of input = (num_inputs (or batch_size), in_height, in_width, in_channels)
-		# shape of filter = (filter_height, filter_width, in_channels, out_channels)
-		# shape of strides = (batch_stride, height_stride, width_stride, channels_stride)
-
-		# CONV LAYER 1
-		inputs = tf.nn.conv2d(inputs, self.filter1, (1, 2, 2, 1), "SAME")
-		# BATCH NORM 1
-		mean, variance = tf.nn.moments(inputs, axes=[0, 1, 2])
-		inputs = tf.nn.batch_normalization(inputs, mean, variance, None, None, 0.0001)
-		# RELU 1 | shape of relu_input = (batch_size, image_height, image_width, num_channels)
-		inputs = tf.nn.relu(inputs)
-		# POOLING 1
-		inputs = tf.nn.max_pool(inputs, (3, 3), (2, 2), "SAME")
-		# CONV LAYER 2
-		inputs = tf.nn.conv2d(inputs, self.filter2, (1, 1, 1, 1), "SAME")
-		# BATCH NORM 2
-		mean, variance = tf.nn.moments(inputs, axes=[0, 1, 2])
-		norm_inputs = tf.nn.batch_normalization(inputs, mean, variance, None, None, 0.0001)
-		# RELU 2
-		inputs = tf.nn.relu(inputs)
-		# POOLING 2
-		inputs = tf.nn.max_pool(inputs, (2, 2), (2, 2), "SAME")
-		# CONV 3
-		filter_ = tf.random.truncated_normal((5, 5, 20, 20))
-		if is_testing:
-			inputs = conv2d(inputs, self.filter3, (1, 1, 1, 1), "SAME")
-		else:
-			inputs = tf.nn.conv2d(inputs, self.filter3, (1, 1, 1, 1), "SAME")
-		# Dense 1
-		inputs = tf.reshape(inputs, (inputs.shape[0], 320))
-		inputs = tf.matmul(inputs, self.w1) + self.b1
-		inputs = tf.nn.dropout(inputs, 0.3)
-		inputs = tf.nn.relu(inputs)
-		# Dense 2
-		inputs = tf.matmul(inputs, self.w2) + self.b2
-		inputs = tf.nn.dropout(inputs, 0.3)
-		inputs = tf.nn.relu(inputs)
-		# Dense 3
-		inputs = tf.matmul(inputs, self.w3) + self.b3
-		return inputs
+		output1 = self.normalize(self.relu(self.conv1_2(self.relu(self.conv1_1(inputs)))))
+		output2 = self.normalize(self.relu(self.conv2_2(self.relu(self.conv2_1(output1)))))
+		output3 = self.normalize(self.relu(self.conv3_3(self.relu(self.conv3_2(self.relu(self.conv3_1(output2)))))))
+		output4 = self.normalize(self.relu(self.conv4_3(self.relu(self.conv4_2(self.relu(self.conv4_1(output3)))))))
+		output5 = self.normalize(self.relu(self.conv5_3(self.relu(self.conv5_2(self.relu(self.conv5_1(output4)))))))
+		output6 = self.normalize(self.relu(self.conv6_3(self.relu(self.conv6_2(self.relu(self.conv6_1(output5)))))))
+		output7 = self.normalize(self.relu(self.conv7_3(self.relu(self.conv7_2(self.relu(self.conv7_1(output6)))))))
+		output8 = self.relu(self.conv8_3(self.relu(self.conv8_2(self.relu(self.conv8_1(output7))))))
+		return self.conv8_313(output8)
 
 	def loss(self, logits, labels):
 		"""
