@@ -90,7 +90,8 @@ class Colorizer(tf.keras.Model):
 		output6 = self.normalize(self.relu(self.conv6_3(self.relu(self.conv6_2(self.relu(self.conv6_1(output5)))))))
 		output7 = self.normalize(self.relu(self.conv7_3(self.relu(self.conv7_2(self.relu(self.conv7_1(output6)))))))
 		output8 = self.relu(self.conv8_3(self.relu(self.conv8_2(self.relu(self.conv8_1(output7))))))
-		return self.conv8_313(output8)
+		y_hat = self.conv8_313(output8)
+		return self.h_function(y_hat)
 
 	def loss(self, logits, labels):
 		"""
