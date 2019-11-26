@@ -1,7 +1,9 @@
 import pickle
 import numpy as np
 import tensorflow as tf
-import os
+#scimg = __import__('scikit-image')
+#color = scimg.color()
+from skimage import color
 
 def unpickle(file):
 	"""
@@ -23,44 +25,26 @@ def unpickle(file):
 
 
 def get_data(file_path, first_class, second_class):
-	"""
-	Given a file path and two target classes, returns an array of 
-	normalized inputs (images) and an array of labels. 
-	You will want to first extract only the data that matches the 
-	corresponding classes we want (there are 10 classes and we only want 2).
-	You should make sure to normalize all inputs and also turn the labels
-	into one hot vectors using tf.one_hot().
-	Note that because you are using tf.one_hot() for your labels, your
-	labels will be a Tensor, while your inputs will be a NumPy array. This 
-	is fine because TensorFlow works with NumPy arrays.
-	:param file_path: file path for inputs and labels, something 
-	like 'CIFAR_data_compressed/train'
-	:param first_class:  an integer (0-9) representing the first target
-	class in the CIFAR10 dataset, for a cat, this would be a 3
-	:param first_class:  an integer (0-9) representing the second target
-	class in the CIFAR10 dataset, for a dog, this would be a 5
-	:return: normalized NumPy array of inputs and tensor of labels, where 
-	inputs are of type np.float32 and has size (num_inputs, width, height, num_channels) and labels 
-	has size (num_examples, num_classes)
-	"""
-	unpickled_file = unpickle(file_path)
-	inputs = unpickled_file[b'data']
-	labels = np.array(unpickled_file[b'labels'])
-	# TODO: Do the rest of preprocessing!
-	indices = []
-	for i in range(labels.shape[0]):
-		if labels[i] == first_class:
-			labels[i] = 0
-			indices.append(i)
-		if labels[i] == second_class:
-			labels[i] = 1
-			indices.append(i)
+    unpickled_file = unpickle(file_path)
+    inputs = unpickled_file[b'data']
+	#labels = unpickled_file[b'data']
 
-	inputs = inputs[indices]
-	inputs = np.reshape(inputs, (-1, 3, 32, 32))
-	inputs = np.transpose(inputs, (0, 2, 3, 1))
-	inputs = inputs / float(255)
-	inputs = inputs.astype('float32')
-	labels = labels[indices]
-	labels = tf.one_hot(labels, depth=2)
-	return inputs, labels
+	# indices = []
+	# for i in range(labels.shape[0]):
+	# 	if labels[i] == first_class:
+	# 		labels[i] = 0
+	# 		indices.append(i)
+	# 	if labels[i] == second_class:
+	# 		labels[i] = 1
+	# 		indices.append(i)
+
+    # inputs = inputs[indices]
+    inputs = np.reshape(inputs, (-1, 3, 32, 32))
+    inputs = np.transpose(inputs, (0, 2, 3, 1))
+    inputs = inputs / float(255)
+    inputs = inputs.astype('float32')
+    for i in range(inputs.shape[0]):
+        inputs[i] = color.rgb2lab(inputs[i])
+    labels = np.copy(inputs)
+    inputs = inputs[:, :, :, 0]
+    return inputs,labels

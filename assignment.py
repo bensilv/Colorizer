@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from matplotlib import pyplot as plt
 from preprocess import get_data
-from convolution import conv2d
+from skimage import color
 
 import os
 import tensorflow as tf
@@ -192,6 +192,33 @@ def visualize_results(image_inputs, probabilities, image_labels, first_label, se
 			ax.tick_params(axis='both', which='both', length=0)
 	plt.show()
 
+def visualize_images(bw_images, color_images, predictions):
+    num_images = bw_images.shape[0]
+
+    fig, axs = plt.subplots(nrows=3, ncols=num_images)
+    fig.suptitle("Images\n ")
+    reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
+    for i in range(bw_images.shape[0]):
+        for w in range(bw_images.shape[1]):
+            for h in range(bw_images.shape[2]):
+                reformatted[i, w, h, 0] = bw_images[i, w, h]
+    for ind, ax in enumerate(axs):
+        for i in range(len(ax)):
+            a = ax[i]
+            if ind == 0:
+                a.imshow(color.lab2rgb(reformatted[i]), cmap="Greys")
+                a.set(title="BW")
+            elif ind == 1:
+                a.imshow(color.lab2rgb(color_images[i]), cmap="Greys")
+                a.set(title="Real")
+            else:
+                a.imshow(color.lab2rgb(predictions[i]), cmap="Greys")
+                a.set(title="Predicted")
+            plt.setp(a.get_xticklabels(), visible=False)
+            plt.setp(a.get_yticklabels(), visible=False)
+            a.tick_params(axis='both', which='both', length=0)
+    plt.show()
+
 
 def main():
 	'''
@@ -203,18 +230,18 @@ def main():
 	'''
 	class1 = 3 # usually 3 - cat
 	class2 = 5 # usually 5 - dog
-	training_inputs, training_labels = get_data("CIFAR_data_compressed/train", class1, class2)
-	test_inputs, test_labels = get_data("CIFAR_data_compressed/test", class1, class2)
-	model = Model()
+	#training_inputs, training_labels = get_data('../CIFAR_data_compressed/train', class1, class2)
+	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test', class1, class2)
+	#model = Model()
 
-	for ep in range(EPOCHS):
-		print("Epoch: " + str(ep + 1))
-		train(model, training_inputs, training_labels)
-	acc = test(model, test_inputs, test_labels)
-	print("FINAL ACCURACY: %.3f" % acc)
-	probabilities = model.call(test_inputs)
-	start = tf.random.uniform([], dtype=tf.dtypes.int32, maxval=test_inputs.shape[0] - 11)
-	visualize_results(test_inputs[start:start + 9, :, :, :], probabilities[start:start + 9], test_labels[start:start + 9], "cat", "dog")
+	# for ep in range(EPOCHS):
+	# 	print("Epoch: " + str(ep + 1))
+	# 	train(model, training_inputs, training_labels)
+	# acc = test(model, test_inputs, test_labels)
+	# print("FINAL ACCURACY: %.3f" % acc)
+	# probabilities = model.call(test_inputs)
+	# start = tf.random.uniform([], dtype=tf.dtypes.int32, maxval=test_inputs.shape[0] - 11)
+	visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], test_labels[0:5, :, :])
 	return
 
 
