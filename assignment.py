@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from matplotlib import pyplot as plt
 from preprocess import get_data
-from convolution import conv2d
+from skimage import color
 
 import os
 import tensorflow as tf
@@ -9,8 +9,6 @@ import numpy as np
 import random
 
 EPOCHS = 10
-
-
 
 class Colorizer(tf.keras.Model):
 	def __init__(self):
@@ -44,30 +42,56 @@ class Colorizer(tf.keras.Model):
 		# Initialize all trainable parameters
 		self.relu = tf.nn.relu()
 		self.bn = tf.keras.layers.BatchNormalization()
-		self.conv1_1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv1_2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=2, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv2_1 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv2_2 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=2, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv3_1 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv3_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv3_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=2, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv4_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv4_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv4_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv8_1 = tf.keras.layers.Conv2DTranspose(filters=256, kernel_size=4, strides=2, padding="SAME", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv8_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, padding="SAME", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv8_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv1_1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv1_2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv2_1 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv2_2 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv3_1 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv3_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv3_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv4_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv4_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv4_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv5_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv5_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv5_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv6_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv6_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv6_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv7_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv7_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv7_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv8_1 = tf.keras.layers.Conv2DTranspose(filters=256, kernel_size=4, strides=2, padding="SAME",
+													   kernel_initializer=tf.keras.initializers.RandomNormal(
+														   stddev=0.1))
+		self.conv8_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, padding="SAME",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv8_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME",
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
 
-		self.conv8_num_classes = tf.keras.layers.Conv2D(filters=self.num_classes, kernel_size=1, strides=1, dilation_rate=1, padding="same", kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.conv8_num_classes = tf.keras.layers.Conv2D(filters=self.num_classes, kernel_size=1, strides=1,
+														dilation_rate=1, padding="same",
+														kernel_initializer=tf.keras.initializers.RandomNormal(
+															stddev=0.1))
 
 	def normalize(inputs):
 		mean, variance = tf.nn.moments(inputs, axes=[0, 1, 2])
@@ -106,7 +130,7 @@ class Colorizer(tf.keras.Model):
 			# prob values should all be less than 1
 			expectation_a = a * prob[i] + expectation_a
 			expectation_b = b * prob[i] + expectation_b
-		return expectation_a,expectation_b
+		return expectation_a, expectation_b
 
 	def ab_to_bin(self, a, b):
 		a_index = int((a - self.a_min) / self.a_range)
@@ -124,7 +148,7 @@ class Colorizer(tf.keras.Model):
 		b_index = bin_id % self.num_a_partitions
 		a = (a_index + 0.5) * self.a_range + self.a_min
 		b = (b_index + 0.5) * self.b_range + self.b_min
-		return a,b
+		return a, b
 
 	def call(self, inputs):
 		"""
@@ -152,7 +176,6 @@ class Colorizer(tf.keras.Model):
 		:param labels: during training, matrix of shape (batch_size, self.num_classes) containing the train labels
 		:return: the loss of the model as a Tensor
 		"""
-
 		return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels, logits))
 
 	def accuracy(self, logits, labels):
@@ -253,6 +276,33 @@ def visualize_results(image_inputs, probabilities, image_labels, first_label, se
 			ax.tick_params(axis='both', which='both', length=0)
 	plt.show()
 
+def visualize_images(bw_images, color_images, predictions):
+    num_images = bw_images.shape[0]
+
+    fig, axs = plt.subplots(nrows=3, ncols=num_images)
+    fig.suptitle("Images\n ")
+    reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
+    for i in range(bw_images.shape[0]):
+        for w in range(bw_images.shape[1]):
+            for h in range(bw_images.shape[2]):
+                reformatted[i, w, h, 0] = bw_images[i, w, h]
+    for ind, ax in enumerate(axs):
+        for i in range(len(ax)):
+            a = ax[i]
+            if ind == 0:
+                a.imshow(color.lab2rgb(reformatted[i]), cmap="Greys")
+                a.set(title="BW")
+            elif ind == 1:
+                a.imshow(color.lab2rgb(color_images[i]), cmap="Greys")
+                a.set(title="Real")
+            else:
+                a.imshow(color.lab2rgb(predictions[i]), cmap="Greys")
+                a.set(title="Predicted")
+            plt.setp(a.get_xticklabels(), visible=False)
+            plt.setp(a.get_yticklabels(), visible=False)
+            a.tick_params(axis='both', which='both', length=0)
+    plt.show()
+
 
 def main():
 	'''
@@ -264,18 +314,18 @@ def main():
 	'''
 	class1 = 3 # usually 3 - cat
 	class2 = 5 # usually 5 - dog
-	training_inputs, training_labels = get_data("CIFAR_data_compressed/train", class1, class2)
-	test_inputs, test_labels = get_data("CIFAR_data_compressed/test", class1, class2)
-	model = Model()
+	#training_inputs, training_labels = get_data('../CIFAR_data_compressed/train', class1, class2)
+	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test', class1, class2)
+	#model = Model()
 
-	for ep in range(EPOCHS):
-		print("Epoch: " + str(ep + 1))
-		train(model, training_inputs, training_labels)
-	acc = test(model, test_inputs, test_labels)
-	print("FINAL ACCURACY: %.3f" % acc)
-	probabilities = model.call(test_inputs)
-	start = tf.random.uniform([], dtype=tf.dtypes.int32, maxval=test_inputs.shape[0] - 11)
-	visualize_results(test_inputs[start:start + 9, :, :, :], probabilities[start:start + 9], test_labels[start:start + 9], "cat", "dog")
+	# for ep in range(EPOCHS):
+	# 	print("Epoch: " + str(ep + 1))
+	# 	train(model, training_inputs, training_labels)
+	# acc = test(model, test_inputs, test_labels)
+	# print("FINAL ACCURACY: %.3f" % acc)
+	# probabilities = model.call(test_inputs)
+	# start = tf.random.uniform([], dtype=tf.dtypes.int32, maxval=test_inputs.shape[0] - 11)
+	visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], test_labels[0:5, :, :])
 	return
 
 
