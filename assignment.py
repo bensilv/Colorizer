@@ -18,13 +18,13 @@ class Colorizer(tf.keras.Model):
 		will break the autograder. We have left in variables in the constructor
 		for you to fill out, but you are welcome to change them if you'd like.
 		"""
-		super(Model, self).__init__()
+		super(Colorizer, self).__init__()
 
 		# Initialize all hyperparameters
-		self.optimizer = optimizer = tf.keras.optimizers.Adam(learning_rate=)
 		self.learning_rate1 = .00003
 		self.learning_rate2 = .00001
 		self.learning_rate3 = 0.000003
+		self.optimizer = optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
 
 		# LAB Colorscheme constants
 		self.num_a_partitions = 20
@@ -40,7 +40,6 @@ class Colorizer(tf.keras.Model):
 		self.b_class_size = self.b_range / self.num_b_partitions
 
 		# Initialize all trainable parameters
-		self.relu = tf.nn.relu()
 		self.bn = tf.keras.layers.BatchNormalization()
 		self.conv1_1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same",
 											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
@@ -156,14 +155,14 @@ class Colorizer(tf.keras.Model):
 		:param inputs: images, shape of (num_inputs, 32, 32, 3); during training, the shape is (batch_size, 32, 32, 3)
 		:return: logits - a matrix of shape (num_inputs, num_classes); during training, it would be (batch_size, 2)
 		"""
-		output1 = self.normalize(self.relu(self.conv1_2(self.relu(self.conv1_1(inputs)))))
-		output2 = self.normalize(self.relu(self.conv2_2(self.relu(self.conv2_1(output1)))))
-		output3 = self.normalize(self.relu(self.conv3_3(self.relu(self.conv3_2(self.relu(self.conv3_1(output2)))))))
-		output4 = self.normalize(self.relu(self.conv4_3(self.relu(self.conv4_2(self.relu(self.conv4_1(output3)))))))
-		output5 = self.normalize(self.relu(self.conv5_3(self.relu(self.conv5_2(self.relu(self.conv5_1(output4)))))))
-		output6 = self.normalize(self.relu(self.conv6_3(self.relu(self.conv6_2(self.relu(self.conv6_1(output5)))))))
-		output7 = self.normalize(self.relu(self.conv7_3(self.relu(self.conv7_2(self.relu(self.conv7_1(output6)))))))
-		output8 = self.relu(self.conv8_3(self.relu(self.conv8_2(self.relu(self.conv8_1(output7))))))
+		output1 = self.normalize(tf.nn.relu(self.conv1_2(tf.nn.relu(self.conv1_1(inputs)))))
+		output2 = self.normalize(tf.nn.relu(self.conv2_2(tf.nn.relu(self.conv2_1(output1)))))
+		output3 = self.normalize(tf.nn.relu(self.conv3_3(tf.nn.relu(self.conv3_2(tf.nn.relu(self.conv3_1(output2)))))))
+		output4 = self.normalize(tf.nn.relu(self.conv4_3(tf.nn.relu(self.conv4_2(tf.nn.relu(self.conv4_1(output3)))))))
+		output5 = self.normalize(tf.nn.relu(self.conv5_3(tf.nn.relu(self.conv5_2(tf.nn.relu(self.conv5_1(output4)))))))
+		output6 = self.normalize(tf.nn.relu(self.conv6_3(tf.nn.relu(self.conv6_2(tf.nn.relu(self.conv6_1(output5)))))))
+		output7 = self.normalize(tf.nn.relu(self.conv7_3(tf.nn.relu(self.conv7_2(tf.nn.relu(self.conv7_1(output6)))))))
+		output8 = tf.nn.relu(self.conv8_3(tf.nn.relu(self.conv8_2(tf.nn.relu(self.conv8_1(output7))))))
 		y_hat = self.conv8_num_classes(output8)
 		return self.h_function(y_hat)
 
@@ -207,6 +206,20 @@ def train(model, train_inputs, train_labels):
 	shape (num_labels, num_classes)
 	:return: None
 	"""
+
+	# random_indices = np.arange(len(train_inputs))
+	# random_indices = tf.random.shuffle(random_indices)
+	# inputs = tf.gather(train_inputs, random_indices)
+	# labels = tf.gather(train_labels, random_indices)
+	# inputs = tf.image.random_flip_left_right(inputs)
+	#
+	# with tf.GradientTape() as tape:
+	# 	predictions = model(inputs)
+	# loss = tf.reduce_mean(model.loss(predictions, labels))
+	#
+	# gradients = tape.gradient(loss, model.trainable_variables)
+	# model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
 	num_examples = train_inputs.shape[0]
 	indices = range(num_examples - 1)
 	indices = tf.random.shuffle(indices)
@@ -312,20 +325,30 @@ def main():
 	You should receive a final accuracy on the testing examples for cat and dog of >=70%.
 	:return: None
 	'''
-	class1 = 3 # usually 3 - cat
-	class2 = 5 # usually 5 - dog
-	#training_inputs, training_labels = get_data('../CIFAR_data_compressed/train', class1, class2)
-	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test', class1, class2)
-	#model = Model()
 
-	# for ep in range(EPOCHS):
-	# 	print("Epoch: " + str(ep + 1))
-	# 	train(model, training_inputs, training_labels)
-	# acc = test(model, test_inputs, test_labels)
-	# print("FINAL ACCURACY: %.3f" % acc)
-	# probabilities = model.call(test_inputs)
-	# start = tf.random.uniform([], dtype=tf.dtypes.int32, maxval=test_inputs.shape[0] - 11)
-	visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], test_labels[0:5, :, :])
+	# training_inputs, training_labels = get_data('../CIFAR_data_compressed/train')
+	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test')
+
+	model = Colorizer()
+	# epochs = 1
+	# batch_size = 64
+	#
+	# for e in range(epochs):
+	# 	batch_start = 0
+	# while (batch_start + batch_size) < len(training_inputs):
+	# 	batch_end = batch_start + batch_size
+	# if batch_end > len(training_inputs):
+	# 	batch_end = len(training_inputs)
+	# train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
+	# batch_start += batch_size
+	# # print("Epoch: {}/{} Accuracy: {}".format(e + 1, epochs, model.accuracy(model.call(training_inputs), training_labels)))
+	# print("Testing!")
+	# print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
+
+	predictions = model.call(test_inputs[0:5, :, :])
+
+	visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], predictions)
+
 	return
 
 

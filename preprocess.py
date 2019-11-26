@@ -24,19 +24,9 @@ def unpickle(file):
 	return dict
 
 
-def get_data(file_path, first_class, second_class):
+def get_data(file_path):
     unpickled_file = unpickle(file_path)
     inputs = unpickled_file[b'data']
-	#labels = unpickled_file[b'data']
-
-	# indices = []
-	# for i in range(labels.shape[0]):
-	# 	if labels[i] == first_class:
-	# 		labels[i] = 0
-	# 		indices.append(i)
-	# 	if labels[i] == second_class:
-	# 		labels[i] = 1
-	# 		indices.append(i)
 
     # inputs = inputs[indices]
     inputs = np.reshape(inputs, (-1, 3, 32, 32))
@@ -47,4 +37,4 @@ def get_data(file_path, first_class, second_class):
         inputs[i] = color.rgb2lab(inputs[i])
     labels = np.copy(inputs)
     inputs = inputs[:, :, :, 0]
-    return inputs,labels
+    return inputs, labels
