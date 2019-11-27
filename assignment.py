@@ -24,7 +24,8 @@ class Colorizer(tf.keras.Model):
 		self.learning_rate1 = .00003
 		self.learning_rate2 = .00001
 		self.learning_rate3 = 0.000003
-		self.optimizer = optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
+		self.T = 0.38
+		self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
 
 		# LAB Colorscheme constants
 		self.num_a_partitions = 20
@@ -87,6 +88,10 @@ class Colorizer(tf.keras.Model):
 		self.conv8_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME",
 											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
 
+		self.conv9_1 = tf.keras.layers.Conv2DTranspose(filters=256, kernel_size=4, strides=4, padding="SAME",
+													   kernel_initializer=tf.keras.initializers.RandomNormal(
+														   stddev=0.1))
+
 		self.conv8_num_classes = tf.keras.layers.Conv2D(filters=self.num_classes, kernel_size=1, strides=1,
 														dilation_rate=1, padding="same",
 														kernel_initializer=tf.keras.initializers.RandomNormal(
@@ -107,12 +112,17 @@ class Colorizer(tf.keras.Model):
 		return z_exponent / z_sum
 
 	def h_function(self, image):
-		width = image.shape[0]
-		height = image.shape[0][0]
-		output = tf.Variable(shape=(width, height, 2))
-		for w in range(width):
-			for h in range(height):
-				output[w][h] = self.h_function_pixel(output[w][h])
+		print(image.shape)
+		width = image.shape[1]
+		height = image.shape[2]
+		output = np.zeros((image.shape[0], width, height, 2))
+		for i in range(output.shape[0]):
+			for w in range(width):
+				for h in range(height):
+					a, b = self.h_function_pixel(image[i][w][h])
+					output[i][w][h][0] = a
+					output[i][w][h][1] = b
+		print(output.shape)
 		return output
 
 	def h_function_pixel(self, pixel):
@@ -123,7 +133,7 @@ class Colorizer(tf.keras.Model):
 		"""
 		expectation_a = 0
 		expectation_b = 0
-		prob = self.temp_softmax(z)
+		prob = self.temp_softmax(pixel)
 		for i in range(pixel.shape[0]):
 			a, b = self.bin_to_ab(i)
 			# prob values should all be less than 1
@@ -155,15 +165,16 @@ class Colorizer(tf.keras.Model):
 		:param inputs: images, shape of (num_inputs, 32, 32, 3); during training, the shape is (batch_size, 32, 32, 3)
 		:return: logits - a matrix of shape (num_inputs, num_classes); during training, it would be (batch_size, 2)
 		"""
-		output1 = self.normalize(tf.nn.relu(self.conv1_2(tf.nn.relu(self.conv1_1(inputs)))))
-		output2 = self.normalize(tf.nn.relu(self.conv2_2(tf.nn.relu(self.conv2_1(output1)))))
-		output3 = self.normalize(tf.nn.relu(self.conv3_3(tf.nn.relu(self.conv3_2(tf.nn.relu(self.conv3_1(output2)))))))
-		output4 = self.normalize(tf.nn.relu(self.conv4_3(tf.nn.relu(self.conv4_2(tf.nn.relu(self.conv4_1(output3)))))))
-		output5 = self.normalize(tf.nn.relu(self.conv5_3(tf.nn.relu(self.conv5_2(tf.nn.relu(self.conv5_1(output4)))))))
-		output6 = self.normalize(tf.nn.relu(self.conv6_3(tf.nn.relu(self.conv6_2(tf.nn.relu(self.conv6_1(output5)))))))
-		output7 = self.normalize(tf.nn.relu(self.conv7_3(tf.nn.relu(self.conv7_2(tf.nn.relu(self.conv7_1(output6)))))))
+		output1 = self.bn(tf.nn.relu(self.conv1_2(tf.nn.relu(self.conv1_1(inputs)))))
+		output2 = self.bn(tf.nn.relu(self.conv2_2(tf.nn.relu(self.conv2_1(output1)))))
+		output3 = self.bn(tf.nn.relu(self.conv3_3(tf.nn.relu(self.conv3_2(tf.nn.relu(self.conv3_1(output2)))))))
+		output4 = self.bn(tf.nn.relu(self.conv4_3(tf.nn.relu(self.conv4_2(tf.nn.relu(self.conv4_1(output3)))))))
+		output5 = self.bn(tf.nn.relu(self.conv5_3(tf.nn.relu(self.conv5_2(tf.nn.relu(self.conv5_1(output4)))))))
+		output6 = self.bn(tf.nn.relu(self.conv6_3(tf.nn.relu(self.conv6_2(tf.nn.relu(self.conv6_1(output5)))))))
+		output7 = self.bn(tf.nn.relu(self.conv7_3(tf.nn.relu(self.conv7_2(tf.nn.relu(self.conv7_1(output6)))))))
 		output8 = tf.nn.relu(self.conv8_3(tf.nn.relu(self.conv8_2(tf.nn.relu(self.conv8_1(output7))))))
-		y_hat = self.conv8_num_classes(output8)
+		output9 = tf.nn.relu(self.conv9_1(output8))
+		y_hat = self.conv8_num_classes(output9)
 		return self.h_function(y_hat)
 
 	def loss(self, logits, labels):
@@ -261,60 +272,37 @@ def test(model, test_inputs, test_labels):
 	return model.accuracy(test_logits, test_labels)
 	pass
 
-def visualize_results(image_inputs, probabilities, image_labels, first_label, second_label):
-	"""
-	Uses Matplotlib to visualize the results of our model.
-	:param image_inputs: image data from get_data(), limited to 10 images, shape (10, 32, 32, 3)
-	:param probabilities: the output of model.call(), shape (10, num_classes)
-	:param image_labels: the labels from get_data(), shape (10, num_classes)
-	:param first_label: the name of the first class, "dog"
-	:param second_label: the name of the second class, "cat"
-
-	NOTE: DO NOT EDIT
-
-	:return: doesn't return anything, a plot should pop-up 
-	"""
-	predicted_labels = np.argmax(probabilities, axis=1)
-	num_images = image_inputs.shape[0]
-
-	fig, axs = plt.subplots(ncols=num_images)
-	fig.suptitle("PL = Predicted Label\nAL = Actual Label")
-	for ind, ax in enumerate(axs):
-			ax.imshow(image_inputs[ind], cmap="Greys")
-			pl = first_label if predicted_labels[ind] == 0.0 else second_label
-			al = first_label if np.argmax(image_labels[ind], axis=0) == 0 else second_label
-			ax.set(title="PL: {}\nAL: {}".format(pl, al))
-			plt.setp(ax.get_xticklabels(), visible=False)
-			plt.setp(ax.get_yticklabels(), visible=False)
-			ax.tick_params(axis='both', which='both', length=0)
-	plt.show()
-
 def visualize_images(bw_images, color_images, predictions):
-    num_images = bw_images.shape[0]
+	num_images = bw_images.shape[0]
 
-    fig, axs = plt.subplots(nrows=3, ncols=num_images)
-    fig.suptitle("Images\n ")
-    reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
-    for i in range(bw_images.shape[0]):
-        for w in range(bw_images.shape[1]):
-            for h in range(bw_images.shape[2]):
-                reformatted[i, w, h, 0] = bw_images[i, w, h]
-    for ind, ax in enumerate(axs):
-        for i in range(len(ax)):
-            a = ax[i]
-            if ind == 0:
-                a.imshow(color.lab2rgb(reformatted[i]), cmap="Greys")
-                a.set(title="BW")
-            elif ind == 1:
-                a.imshow(color.lab2rgb(color_images[i]), cmap="Greys")
-                a.set(title="Real")
-            else:
-                a.imshow(color.lab2rgb(predictions[i]), cmap="Greys")
-                a.set(title="Predicted")
-            plt.setp(a.get_xticklabels(), visible=False)
-            plt.setp(a.get_yticklabels(), visible=False)
-            a.tick_params(axis='both', which='both', length=0)
-    plt.show()
+	fig, axs = plt.subplots(nrows=3, ncols=num_images)
+	fig.suptitle("Images\n ")
+	reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
+	reformatted_predictions = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
+	print(predictions.shape)
+	for i in range(bw_images.shape[0]):
+		for w in range(bw_images.shape[1]):
+			for h in range(bw_images.shape[2]):
+				reformatted[i, w, h, 0] = bw_images[i, w, h, 0]
+				reformatted_predictions[i, w, h, 0] = bw_images[i, w, h, 0]
+				reformatted_predictions[i, w, h, 0] = predictions[i, w, h, 0]
+				reformatted_predictions[i, w, h, 0] = predictions[i, w, h, 1]
+	for ind, ax in enumerate(axs):
+		for i in range(len(ax)):
+			a = ax[i]
+			if ind == 0:
+				a.imshow(color.lab2rgb(reformatted[i]), cmap="Greys")
+				a.set(title="BW")
+			elif ind == 1:
+				a.imshow(color.lab2rgb(color_images[i]), cmap="Greys")
+				a.set(title="Real")
+			else:
+				a.imshow(color.lab2rgb(reformatted_predictions[i]), cmap="Greys")
+				a.set(title="Predicted")
+			plt.setp(a.get_xticklabels(), visible=False)
+			plt.setp(a.get_yticklabels(), visible=False)
+			a.tick_params(axis='both', which='both', length=0)
+	plt.show()
 
 
 def main():

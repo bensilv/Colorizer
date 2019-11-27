@@ -37,4 +37,5 @@ def get_data(file_path):
         inputs[i] = color.rgb2lab(inputs[i])
     labels = np.copy(inputs)
     inputs = inputs[:, :, :, 0]
+    inputs = np.expand_dims(inputs, axis=3) #converts from (num_images, 32,32) to (num_images, 32, 32, 1)
     return inputs, labels
