@@ -9,8 +9,23 @@ from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, LeakyReLU
 from tensorflow.keras.initializers import RandomNormal
 import numpy as np
 import random
+import argparse
 
-EPOCHS = 10
+
+gpu_available = tf.test.is_gpu_available()
+print("GPU Available: ", gpu_available)
+
+parser = argparse.ArgumentParser(description='Colorizer')
+
+parser.add_argument('--mode', type=str, default='test', help='Can be "train" or "test"')
+parser.add_argument('--device', type=str, default='GPU:0' if gpu_available else 'CPU:0',
+                    help='specific the device of computation eg. CPU:0, GPU:0, GPU:1, GPU:2, ... ')
+parser.add_argument('--batch-size', type=int, default=128,
+                    help='Sizes of image batches fed through the network')
+parser.add_argument('--num-epochs', type=int, default=10,
+                    help='Number of passes through the training data to make before stopping')
+
+args = parser.parse_args()
 
 class Colorizer(tf.keras.Model):
 	def __init__(self):
@@ -23,7 +38,6 @@ class Colorizer(tf.keras.Model):
 		super(Colorizer, self).__init__()
 
 		# Initialize all hyperparameters
-		self.batch_size = 64
 		self.learning_rate1 = .00003
 		self.learning_rate2 = .00001
 		self.learning_rate3 = 0.000003
@@ -265,9 +279,9 @@ def train(model, train_inputs, train_labels):
 	tf.gather(train_labels, indices)
 	train_inputs = tf.image.random_flip_left_right(train_inputs)
 	i = 0
-	min_index = i * model.batch_size
+	min_index = i * args.batch_size
 	while min_index < num_examples:
-		max_index = min_index + model.batch_size
+		max_index = min_index + args.batch_size
 		if max_index >= num_examples:
 			max_index = num_examples - 1
 		inputs = train_inputs[min_index:max_index, :, :, :]
@@ -278,10 +292,9 @@ def train(model, train_inputs, train_labels):
 		gradients = tape.gradient(loss, model.trainable_variables)
 		model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 		i += 1
-		min_index = i * model.batch_size
+		min_index = i * args.batch_size
 	loss = model.loss(predictions, labels)
-	print("Loss: {}".format(loss))
-	return
+	return loss
 
 
 def test(model, test_inputs, test_labels):
@@ -295,7 +308,7 @@ def test(model, test_inputs, test_labels):
 	:return: test accuracy - this can be the average accuracy across 
 	all batches or the sum as long as you eventually divide it by batch_size
 	"""
-	test_logits = model.call(test_inputs, True)
+	test_logits = model.call(test_inputs)
 	return model.accuracy(test_logits, test_labels)
 	pass
 
@@ -340,31 +353,48 @@ def main():
 	:return: None
 	'''
 
+	model = Colorizer()
+	checkpoint_dir = './checkpoints'
+	checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+	checkpoint = tf.train.Checkpoint(model=model)
+	manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
+
+	if args.mode == 'test':
+		# restores the latest checkpoint using from the manager
+		checkpoint.restore(manager.latest_checkpoint)
+
 	training_inputs, training_labels = get_data('../CIFAR_data_compressed/train')
 	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test')
 
-	model = Colorizer()
-	epochs = 1
-	batch_size = 64
+
 	batch = 0
 
-	for e in range(epochs):
-		batch_start = 0
-		while (batch_start + batch_size) < len(training_inputs):
-			batch += 1
-			batch_end = batch_start + batch_size
-			if batch_end > len(training_inputs):
-				batch_end = len(training_inputs)
-			train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
-			print("Epoch: {}/{} Batch: {}/{} Accuracy: {}".format(e + 1, epochs, batch, len(training_inputs)/batch_size, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
-			batch_start += batch_size
-	print("Testing!")
-	print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
-	model.init_bin_to_ab_array()
+	try:
+		#specify an invalid GPU device
+		with tf.device("/device:" + args.device):
+			if args.mode == 'train':
+				for e in range(args.num_epochs):
+					batch_start = 0
+					while (batch_start + args.batch_size) < len(training_inputs):
+						batch += 1
+						batch_end = batch_start + args.batch_size
+						if batch_end > len(training_inputs):
+							batch_end = len(training_inputs)
+						loss = train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
+						print("Epoch: {}/{} Batch: {}/{} Loss: {} Accuracy: {}".format(e + 1, args.num_epochs, batch, len(training_inputs)/args.batch_size, loss, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
+						batch_start += args.batch_size
+					manager.save()
+					print("Saved Batch!")
+			if args.mode == 'test':
+				print("Testing!")
+				print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
+				model.init_bin_to_ab_array()
 
-	predictions = model.call(test_inputs[0:5, :, :])
+				predictions = model.call(test_inputs[0:5, :, :])
 
-	visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], predictions)
+				visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], predictions)
+	except RuntimeError as e:
+		print(e)
 
 	return
 
