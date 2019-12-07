@@ -5,6 +5,8 @@ from skimage import color
 
 import os
 import tensorflow as tf
+from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, LeakyReLU, Reshape, Conv2DTranspose, Activation
+from tensorflow.keras.initializers import RandomNormal
 import numpy as np
 import random
 
@@ -21,10 +23,11 @@ class Colorizer(tf.keras.Model):
 		super(Colorizer, self).__init__()
 
 		# Initialize all hyperparameters
+		self.batch_size = 64
 		self.learning_rate1 = .00003
 		self.learning_rate2 = .00001
 		self.learning_rate3 = 0.000003
-		self.T = 0.38
+		self.temperature = 0.38
 		self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
 
 		# LAB Colorscheme constants
@@ -39,107 +42,131 @@ class Colorizer(tf.keras.Model):
 		self.b_range = self.b_max - self.b_min
 		self.a_class_size = self.a_range / self.num_a_partitions
 		self.b_class_size = self.b_range / self.num_b_partitions
+		self.bin_to_ab_arr = np.zeros(shape=(400, 2), dtype=np.float32)
+		self.stdev = .0313
 
 		# Initialize all trainable parameters
-		self.bn = tf.keras.layers.BatchNormalization()
-		self.conv1_1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv1_2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv2_1 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv2_2 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv3_1 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv3_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv3_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
-		self.conv4_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv4_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv4_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv5_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv6_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv7_3 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv8_1 = tf.keras.layers.Conv2DTranspose(filters=256, kernel_size=4, strides=2, padding="SAME",
-													   kernel_initializer=tf.keras.initializers.RandomNormal(
-														   stddev=0.1))
-		self.conv8_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, padding="SAME",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
-		self.conv8_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+		self.model = tf.keras.Sequential()
+		#section 1
+		self.model.add(Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+							  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=64, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+							  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
 
-		self.conv9_1 = tf.keras.layers.Conv2DTranspose(filters=256, kernel_size=4, strides=4, padding="SAME",
-													   kernel_initializer=tf.keras.initializers.RandomNormal(
-														   stddev=0.1))
+		#section 2
+		self.model.add(Conv2D(filters=128, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=128, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
 
-		self.conv8_num_classes = tf.keras.layers.Conv2D(filters=self.num_classes, kernel_size=1, strides=1,
+		#section 3
+		self.model.add(Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=256, kernel_size=3, strides=2, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
+
+		#section 4
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
+
+
+		#section 5
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
+
+		#section 6
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=2, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
+
+		#section 7
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
+
+		#section 8
+		self.model.add(Conv2DTranspose(filters=256, kernel_size=4, strides=2, padding="SAME",
+													   kernel_initializer=RandomNormal(
+														   stddev=0.1), activation='relu'))
+		self.model.add(Conv2D(filters=256, kernel_size=3, strides=1, padding="SAME",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		self.model.add(Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME",
+											  kernel_initializer=RandomNormal(stddev=self.stdev), activation='relu'))
+		#self.model.add(BatchNormalization())
+
+		#section 9
+		self.model.add(Conv2DTranspose(filters=256, kernel_size=4, strides=4, padding="SAME",
+													   kernel_initializer=RandomNormal(
+														   stddev=self.stdev), activation='relu'))
+
+		#y_hat (convert num classes)
+		self.model.add(Conv2D(filters=self.num_classes, kernel_size=1, strides=1,
 														dilation_rate=1, padding="same",
-														kernel_initializer=tf.keras.initializers.RandomNormal(
-															stddev=0.1))
+														kernel_initializer=RandomNormal(
+															stddev=self.stdev)))
 
 	def normalize(inputs):
 		mean, variance = tf.nn.moments(inputs, axes=[0, 1, 2])
 		return tf.nn.batch_normalization(inputs, mean, variance, None, None, 0.001)
 
-	def temp_softmax(self, z):
-		"""
-		Calculates the f_T function on a single pixel.
-		:param z: a array representing the probability of each pixel being in different color bins. Size (num_bins)
-		:return: the output of the modified softmax, dimension: (num_bins)
-		"""
-		z_exponent = tf.math.exp(tf.math.log(z) / self.T)
-		z_sum = tf.reduce_sum(z_exponent)
-		return z_exponent / z_sum
-
 	def h_function(self, image):
-		print(image.shape)
 		width = image.shape[1]
 		height = image.shape[2]
-		output = np.zeros((image.shape[0], width, height, 2))
-		for i in range(output.shape[0]):
-			for w in range(width):
-				for h in range(height):
-					a, b = self.h_function_pixel(image[i][w][h])
-					output[i][w][h][0] = a
-					output[i][w][h][1] = b
-		print(output.shape)
-		return output
+		#output = np.zeros((image.shape[0], width, height, 2))
 
-	def h_function_pixel(self, pixel):
-		"""
-		Calculates the h function for a single pixel.
-		:param pixel: a array representing the probability of each pixel being in different color bins. Size (num_bins)
-		:return: the expectation of a and b. Size 1x2: (a,b)
-		"""
-		expectation_a = 0
-		expectation_b = 0
-		prob = self.temp_softmax(pixel)
-		for i in range(pixel.shape[0]):
-			a, b = self.bin_to_ab(i)
-			# prob values should all be less than 1
-			expectation_a = a * prob[i] + expectation_a
-			expectation_b = b * prob[i] + expectation_b
-		return expectation_a, expectation_b
+		probs = tf.nn.softmax(image / self.temperature)
+		ab = tf.tensordot(probs, self.bin_to_ab_arr, axes=((3), (0)))
+		return ab
+
+
+
+		# for i in range(output.shape[0]):
+		# 	for w in range(width):
+		# 		for h in range(height):
+		# 			a, b = self.h_function_pixel(image[i][w][h])
+		# 			output[i][w][h][0] = a
+		# 			output[i][w][h][1] = b
+		# return output
+
+	# def h_function_pixel(self, pixel):
+	# 	"""
+	# 	Calculates the h function for a single pixel.
+	# 	:param pixel: a array representing the probability of each pixel being in different color bins. Size (num_bins)
+	# 	:return: the expectation of a and b. Size 1x2: (a,b)
+	# 	"""
+	# 	expectation_a = 0
+	# 	expectation_b = 0
+	# 	prob = tf.nn.softmax(tf.div(pixel, self.temperature))
+	#
+	# 	for i in range(pixel.shape[0]):
+	# 		a, b = self.bin_to_ab(i)
+	# 		# prob values should all be less than 1
+	# 		expectation_a = a * prob[i] + expectation_a
+	# 		expectation_b = b * prob[i] + expectation_b
+	# 	return expectation_a, expectation_b
 
 	def ab_to_bin(self, a, b):
 		a_index = int((a - self.a_min) / self.a_range)
@@ -149,7 +176,7 @@ class Colorizer(tf.keras.Model):
 
 	def bin_to_ab(self, bin_id):
 		"""
-		Sets up a dictionary that maps from bin number to ab values
+		Calculates a, b values for a given bin id
 		:param bin_val: bin number (which is 0-indexed)
 		:return: corresponding ab value as a tuple (a, b)
 		"""
@@ -159,22 +186,22 @@ class Colorizer(tf.keras.Model):
 		b = (b_index + 0.5) * self.b_range + self.b_min
 		return a, b
 
+	def init_bin_to_ab_array(self):
+		"""
+		Fill in the values for the bin_to_ab array
+		"""
+		for i in range(self.bin_to_ab_arr.shape[0]):
+			a, b = self.bin_to_ab(i)
+			self.bin_to_ab_arr[i][0] = a
+			self.bin_to_ab_arr[i][1] = b
+
 	def call(self, inputs):
 		"""
 		Runs a forward pass on an input batch of images.
 		:param inputs: images, shape of (num_inputs, 32, 32, 3); during training, the shape is (batch_size, 32, 32, 3)
 		:return: logits - a matrix of shape (num_inputs, num_classes); during training, it would be (batch_size, 2)
 		"""
-		output1 = self.bn(tf.nn.relu(self.conv1_2(tf.nn.relu(self.conv1_1(inputs)))))
-		output2 = self.bn(tf.nn.relu(self.conv2_2(tf.nn.relu(self.conv2_1(output1)))))
-		output3 = self.bn(tf.nn.relu(self.conv3_3(tf.nn.relu(self.conv3_2(tf.nn.relu(self.conv3_1(output2)))))))
-		output4 = self.bn(tf.nn.relu(self.conv4_3(tf.nn.relu(self.conv4_2(tf.nn.relu(self.conv4_1(output3)))))))
-		output5 = self.bn(tf.nn.relu(self.conv5_3(tf.nn.relu(self.conv5_2(tf.nn.relu(self.conv5_1(output4)))))))
-		output6 = self.bn(tf.nn.relu(self.conv6_3(tf.nn.relu(self.conv6_2(tf.nn.relu(self.conv6_1(output5)))))))
-		output7 = self.bn(tf.nn.relu(self.conv7_3(tf.nn.relu(self.conv7_2(tf.nn.relu(self.conv7_1(output6)))))))
-		output8 = tf.nn.relu(self.conv8_3(tf.nn.relu(self.conv8_2(tf.nn.relu(self.conv8_1(output7))))))
-		output9 = tf.nn.relu(self.conv9_1(output8))
-		y_hat = self.conv8_num_classes(output9)
+		y_hat = self.model(inputs)
 		return self.h_function(y_hat)
 
 	def loss(self, logits, labels):
@@ -186,7 +213,7 @@ class Colorizer(tf.keras.Model):
 		:param labels: during training, matrix of shape (batch_size, self.num_classes) containing the train labels
 		:return: the loss of the model as a Tensor
 		"""
-		return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels, logits))
+		return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels[:, :, :, 1:3], logits))
 
 	def accuracy(self, logits, labels):
 		"""
@@ -253,7 +280,7 @@ def train(model, train_inputs, train_labels):
 		i += 1
 		min_index = i * model.batch_size
 	loss = model.loss(predictions, labels)
-	print("Loss: " + str(loss))
+	print("Loss: {}".format(loss))
 	return
 
 
@@ -279,7 +306,6 @@ def visualize_images(bw_images, color_images, predictions):
 	fig.suptitle("Images\n ")
 	reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
 	reformatted_predictions = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
-	print(predictions.shape)
 	for i in range(bw_images.shape[0]):
 		for w in range(bw_images.shape[1]):
 			for h in range(bw_images.shape[2]):
@@ -314,24 +340,27 @@ def main():
 	:return: None
 	'''
 
-	# training_inputs, training_labels = get_data('../CIFAR_data_compressed/train')
+	training_inputs, training_labels = get_data('../CIFAR_data_compressed/train')
 	test_inputs, test_labels = get_data('../CIFAR_data_compressed/test')
 
 	model = Colorizer()
-	# epochs = 1
-	# batch_size = 64
-	#
-	# for e in range(epochs):
-	# 	batch_start = 0
-	# while (batch_start + batch_size) < len(training_inputs):
-	# 	batch_end = batch_start + batch_size
-	# if batch_end > len(training_inputs):
-	# 	batch_end = len(training_inputs)
-	# train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
-	# batch_start += batch_size
-	# # print("Epoch: {}/{} Accuracy: {}".format(e + 1, epochs, model.accuracy(model.call(training_inputs), training_labels)))
-	# print("Testing!")
-	# print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
+	epochs = 1
+	batch_size = 64
+	batch = 0
+
+	for e in range(epochs):
+		batch_start = 0
+		while (batch_start + batch_size) < len(training_inputs):
+			batch += 1
+			batch_end = batch_start + batch_size
+			if batch_end > len(training_inputs):
+				batch_end = len(training_inputs)
+			train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
+			print("Epoch: {}/{} Batch: {}/{} Accuracy: {}".format(e + 1, epochs, batch, len(training_inputs)/batch_size, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
+			batch_start += batch_size
+	print("Testing!")
+	print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
+	model.init_bin_to_ab_array()
 
 	predictions = model.call(test_inputs[0:5, :, :])
 
