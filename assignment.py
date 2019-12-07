@@ -43,19 +43,19 @@ class Colorizer(tf.keras.Model):
 		# Initialize all trainable parameters
 		self.bn = tf.keras.layers.BatchNormalization()
 		self.conv1_1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv1_2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv2_1 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv2_2 = tf.keras.layers.Conv2D(filters=128, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv3_1 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv3_2 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv3_3 = tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=2, dilation_rate=1, padding="same",
-											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
+											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=1))
 		self.conv4_1 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
 											  kernel_initializer=tf.keras.initializers.RandomNormal(stddev=0.1))
 		self.conv4_2 = tf.keras.layers.Conv2D(filters=512, kernel_size=3, strides=1, dilation_rate=1, padding="same",
