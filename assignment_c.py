@@ -387,7 +387,7 @@ def main():
 					print("Saved Batch!")
 			if args.mode == 'test':
 				print("Testing!")
-				print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
+				#print("Final Accuracy: {}".format(test(model, test_inputs, test_labels)))
 				model.init_bin_to_ab_array()
 
 				predictions = model.call(test_inputs[0:5, :, :])
