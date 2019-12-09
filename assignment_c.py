@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import matplotlib
+#matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from preprocess_c import get_data
 from skimage import color
@@ -50,7 +51,7 @@ class Colorizer(tf.keras.Model):
 		self.learning_rate2 = .00001
 		self.learning_rate3 = 0.000003
 		self.temperature = 0.38
-		self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
+		self.optimizer = tf.keras.optimizers.Adam(learning_rate=.1)
 
 		# LAB Colorscheme constants
 		self.num_a_partitions = 20
