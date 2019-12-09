@@ -65,7 +65,7 @@ class Colorizer(tf.keras.Model):
 		self.b_range = self.b_max - self.b_min
 		self.a_class_size = self.a_range / self.num_a_partitions
 		self.b_class_size = self.b_range / self.num_b_partitions
-		self.bin_to_ab_arr = np.zeros(shape=(400, 2), dtype=np.float32)
+		self.bin_to_ab_arr = np.zeros(shape=(self.num_a_partitions * self.num_b_partitions, 2), dtype=np.float32)
 		self.stdev = .04
 		# .0313
 
@@ -151,6 +151,7 @@ class Colorizer(tf.keras.Model):
 														dilation_rate=1, padding="same",
 														kernel_initializer=TruncatedNormal(
 															stddev=self.stdev)))
+		self.init_bin_to_ab_array()
 
 
 	def h_function(self, image):
@@ -375,9 +376,6 @@ def main():
 	training_inputs, training_labels = get_data('CIFAR_data_compressed/train')
 	test_inputs, test_labels = get_data('CIFAR_data_compressed/test')
 
-
-
-
 	try:
 		#specify an invalid GPU device
 		with tf.device("/device:" + args.device):
@@ -410,8 +408,6 @@ def main():
 						batch_start += args.batch_size
 
 					print("Final Accuracy: {}".format(total / len(test_inputs)))
-
-				model.init_bin_to_ab_array()
 
 				predictions = model.call(test_inputs[0:5, :, :])
 
