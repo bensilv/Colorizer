@@ -149,18 +149,19 @@ class Colorizer(tf.keras.Model):
 											  kernel_initializer=TruncatedNormal(stddev=self.stdev), activation='relu'))
 		self.model.add(Conv2D(filters=256, kernel_size=4, strides=1, padding="SAME",
 											  kernel_initializer=TruncatedNormal(stddev=self.stdev), activation='relu'))
-		#self.model.add(BatchNormalization())
+		self.model.add(BatchNormalization())
 
 		#section 9
 		self.model.add(Conv2DTranspose(filters=256, kernel_size=4, strides=4, padding="SAME",
 													   kernel_initializer=TruncatedNormal(
 														   stddev=self.stdev), activation='relu'))
+		self.model.add(BatchNormalization())
 
 		#y_hat (convert num classes)
 		self.model.add(Conv2D(filters=self.num_classes, kernel_size=1, strides=1,
 														dilation_rate=1, padding="same",
 														kernel_initializer=TruncatedNormal(
-															stddev=self.stdev)))
+															stddev=self.stdev), activation='softmax'))
 		self.init_bin_to_ab_array()
 
 
@@ -231,7 +232,8 @@ class Colorizer(tf.keras.Model):
 		h = predictions.shape[1]
 		w = predictions.shape[2]
 		v_blank = np.zeros(shape=(predictions.shape[:3]))
-		summation_1 = tf.math.reduce_sum(tf.multiply(z, tf.math.log(predictions)), axis=3)
+		summation_1 = tf.keras.losses.categorical_crossentropy(z, predictions)
+			# tf.math.reduce_sum(tf.multiply(z, tf.math.log(predictions)), axis=3)
 		for x in range(num_images):
 			for i in range(h):
 				for j in range(w):
