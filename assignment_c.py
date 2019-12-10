@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description='Colorizer')
 parser.add_argument('--mode', type=str, default='test', help='Can be "train" or "test"')
 parser.add_argument('--device', type=str, default='GPU:0' if gpu_available else 'CPU:0',
                     help='specific the device of computation eg. CPU:0, GPU:0, GPU:1, GPU:2, ... ')
-parser.add_argument('--batch-size', type=int, default=128,
+parser.add_argument('--batch-size', type=int, default=64,
                     help='Sizes of image batches fed through the network')
 parser.add_argument('--num-epochs', type=int, default=10,
                     help='Number of passes through the training data to make before stopping')
@@ -234,6 +234,10 @@ class Colorizer(tf.keras.Model):
 		v_blank = np.zeros(shape=(predictions.shape[:3]))
 		summation_1 = tf.keras.losses.categorical_crossentropy(z, predictions)
 			# tf.math.reduce_sum(tf.multiply(z, tf.math.log(predictions)), axis=3)
+
+
+
+
 		for x in range(num_images):
 			for i in range(h):
 				for j in range(w):
@@ -257,12 +261,13 @@ class Colorizer(tf.keras.Model):
 		:return: (batch_size, h, w, num_bins) dimension matrix of a single image's bin distribution (each pixel should
 		only have five bins with probability values)
 		"""
-		final_array = np.zeros(shape=(labels.shape[0], labels.shape[1], labels.shape[2], self.num_classes), dtype=np.float32)
-		for i in range(labels.shape[0]):
-			for r in range(labels.shape[1]):
-				for c in range(labels.shape[2]):
-					final_array[i][r][c] = self.calculate_bin_distribution_pixel(labels[i][r][c][0], labels[i][r][c][1])
-		return tf.convert_to_tensor(final_array)
+		batch_size = labels.shape[0]
+		r_size = labels.shape[1]
+		c_size = labels.shape[2]
+		labels = tf.reshape(labels, [-1, 2])
+		bin_distributions = tf.map_fn(lambda x: self.calculate_bin_distribution_pixel(x[0], x[1]), labels)
+		bin_distributions = tf.reshape(bin_distributions, [batch_size, r_size, c_size, self.num_classes])
+		return bin_distributions
 
 	def calculate_bin_distribution_pixel(self, a, b):
 		"""
@@ -356,7 +361,7 @@ def train(model, train_inputs, train_labels):
 	:return: None
 	"""
 	num_examples = train_inputs.shape[0]
-	indices = range(num_examples - 1)
+	indices = range(num_examples)
 	indices = tf.random.shuffle(indices)
 	tf.gather(train_inputs, indices)
 	tf.gather(train_labels, indices)
@@ -474,8 +479,9 @@ def main():
 						loss = train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
 						print("Epoch: {}/{} Batch: {}/{} Loss: {} Accuracy: {}".format(e + 1, args.num_epochs, batch, len(training_inputs)/args.batch_size, loss, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
 						batch_start += args.batch_size
-					manager.save()
-					print("Saved Batch!")
+						if batch % 50 == 0:
+							manager.save()
+							print("Saved Batch!")
 			if args.mode == 'test':
 				if args.full_test:
 					print("Testing!")
