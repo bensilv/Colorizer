@@ -7,6 +7,7 @@ from skimage import color
 
 import os
 import tensorflow as tf
+import tensorflow_probability as tfp
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization, LeakyReLU, Reshape, Conv2DTranspose, Activation
 from tensorflow.keras.initializers import RandomNormal, TruncatedNormal
 import numpy as np
@@ -56,27 +57,27 @@ class Colorizer(tf.keras.Model):
 		self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
 
 		# LAB Colorscheme constants
-		self.num_a_partitions = 20
-		self.num_b_partitions = 20
-		self.a_min = -86.185
-		self.a_max = 98.254
-		self.b_min = -107.863
-		self.b_max = 94.482
+		self.num_a_partitions = tf.constant(20, dtype=tf.float32)
+		self.num_b_partitions = tf.constant(20, dtype=tf.float32)
+		self.a_min = tf.constant(-86.185, dtype=tf.float32)
+		self.a_max = tf.constant(98.254, dtype=tf.float32)
+		self.b_min = tf.constant(-107.863, dtype=tf.float32)
+		self.b_max = tf.constant(94.482, dtype=tf.float32)
 		self.num_classes = self.num_a_partitions * self.num_b_partitions
-		self.a_range = self.a_max - self.a_min
-		self.b_range = self.b_max - self.b_min
-		self.a_class_size = self.a_range / self.num_a_partitions
-		self.b_class_size = self.b_range / self.num_b_partitions
+		self.a_range = tf.constant(self.a_max - self.a_min, dtype=tf.float32)
+		self.b_range = tf.constant(self.b_max - self.b_min, dtype=tf.float32)
+		self.a_class_size = self.a_range / tf.dtypes.cast(self.num_a_partitions, tf.float32)
+		self.b_class_size = self.b_range / tf.dtypes.cast(self.num_b_partitions, tf.float32)
 
 		# other constants
-		self.bin_to_ab_arr = np.zeros(shape=(self.num_a_partitions * self.num_b_partitions, 2), dtype=np.float32)
+		self.bin_to_ab_arr = self.init_bin_to_ab_array()
 		self.expansion_size = 0.0001
 		self.stdev = .04
-		self.bin_distribution = np.zeros(shape=self.num_classes)
+		self.bin_distribution = tf.zeros(shape=[self.num_classes], dtype=tf.float32)
 		self.bin_distance_stddev = 5
 		self.gaussian_filter_stddev = 5
 		self.lam = .5
-		self.w = np.zeros(shape=self.num_classes)
+		self.w = tf.zeros(shape=[self.num_classes], dtype=tf.float32)
 		# .0313
 
 		# Initialize all trainable parameters
@@ -179,7 +180,7 @@ class Colorizer(tf.keras.Model):
 		"""
 		a_index = (a - self.a_min) / self.a_range
 		b_index = (b - self.b_min) / self.b_range
-		bin_num = int(a_index * self.num_a_partitions) * self.num_b_partitions + int(b_index * self.num_b_partitions)
+		bin_num = int(tf.dtypes.cast(a_index, tf.float32) * self.num_a_partitions * self.num_b_partitions + tf.dtypes.cast(b_index, tf.float32) * self.num_b_partitions)
 		return bin_num
 
 	def bin_to_ab(self, bin_id):
@@ -188,20 +189,22 @@ class Colorizer(tf.keras.Model):
 		:param bin_val: bin number (which is 0-indexed)
 		:return: corresponding ab value as a tuple (a, b)
 		"""
-		a_index = bin_id / self.num_a_partitions
-		b_index = bin_id % self.num_a_partitions
+		a_index = tf.dtypes.cast(tf.dtypes.cast(bin_id, tf.float32) / self.num_a_partitions, tf.float32)
+		b_index = tf.dtypes.cast(tf.dtypes.cast(bin_id, tf.float32) % self.num_a_partitions, tf.float32)
 		a = (a_index + 0.5) / self.num_a_partitions * self.a_range + self.a_min
 		b = (b_index + 0.5) / self.num_b_partitions * self.b_range + self.b_min
-		return a, b
+		return tf.convert_to_tensor(a), tf.convert_to_tensor(b)
 
 	def init_bin_to_ab_array(self):
 		"""
 		Fill in the values for the bin_to_ab array
 		"""
-		for i in range(self.bin_to_ab_arr.shape[0]):
+		temp_arr = np.zeros(shape=(self.num_a_partitions * self.num_b_partitions, 2), dtype=np.float32)
+		for i in range(temp_arr.shape[0]):
 			a, b = self.bin_to_ab(i)
-			self.bin_to_ab_arr[i][0] = a
-			self.bin_to_ab_arr[i][1] = b
+			temp_arr[i][0] = a
+			temp_arr[i][1] = b
+		return tf.convert_to_tensor(temp_arr, dtype=tf.float32)
 
 	def init_w(self):
 		"""
@@ -233,27 +236,29 @@ class Colorizer(tf.keras.Model):
 		w = predictions.shape[2]
 		v_blank = np.zeros(shape=(predictions.shape[:3]))
 		summation_1 = tf.keras.losses.categorical_crossentropy(z, predictions)
-			# tf.math.reduce_sum(tf.multiply(z, tf.math.log(predictions)), axis=3)
-
-
-
-
 		for x in range(num_images):
 			for i in range(h):
 				for j in range(w):
 					v_blank[x,i,j] = self.v(z[x,i,j,:])
 		return -tf.tensordot(tf.convert_to_tensor(v_blank, dtype=tf.float32), summation_1, axes=3)
 
+	@tf.function
 	def init_bin_distribution(self, data):
 		"""
 		Initializes self.bin_distribution to be the distribution for all bins over every image in the training set
 		:param data, (training_set_size, h, w, 2) dimension matrix of all images in the training set
 		"""
-		for i in range(data.shape[0]):
-			for r in range(data.shape[1]):
-				for c in range(data.shape[2]):
-					self.bin_distribution += self.calculate_bin_distribution_pixel(data[i][r][c][0], data[i][r][c][1])
+		batch_size = data.shape[0]
+		r_size = data.shape[1]
+		c_size = data.shape[2]
+		labels = tf.reshape(data, [-1, 2])
+		print("Finished reshape")
+		bin_distributions = tf.map_fn(lambda x: self.calculate_bin_distribution_pixel(x[0], x[1]), labels, parallel_iterations=10)
+		print("Finished map_fn")
+		self.bin_distribution += tf.reduce_sum(tf.reshape(bin_distributions, [batch_size, r_size, c_size, self.num_classes]), axis=(0, 1, 2))
+		print("Finished init_bin_distribution")
 
+	@tf.function
 	def calculate_bin_distribution(self, labels):
 		"""
 		Converts the input image from a,b values to a bin distribution using calculate_bin_distribution_pixel
@@ -261,12 +266,14 @@ class Colorizer(tf.keras.Model):
 		:return: (batch_size, h, w, num_bins) dimension matrix of a single image's bin distribution (each pixel should
 		only have five bins with probability values)
 		"""
+		print("Started calculate_bin_distribution")
 		batch_size = labels.shape[0]
 		r_size = labels.shape[1]
 		c_size = labels.shape[2]
 		labels = tf.reshape(labels, [-1, 2])
-		bin_distributions = tf.map_fn(lambda x: self.calculate_bin_distribution_pixel(x[0], x[1]), labels)
+		bin_distributions = tf.map_fn(lambda x: self.calculate_bin_distribution_pixel(x[0], x[1]), labels, parallel_iterations=10)
 		bin_distributions = tf.reshape(bin_distributions, [batch_size, r_size, c_size, self.num_classes])
+		print("Finished calculate_bin_distribution")
 		return bin_distributions
 
 	def calculate_bin_distribution_pixel(self, a, b):
@@ -278,7 +285,7 @@ class Colorizer(tf.keras.Model):
 		:return: (num_bins) dimension bin distribution for a single pixel(should only have five bins with probability
 		values)
 		"""
-		bin_distribution = np.zeros(shape=self.num_classes, dtype=np.float32)
+		bin_distribution = np.zeros(shape=[self.num_classes], dtype=np.float32)
 
 		top_left = (a - (self.a_class_size / 2 + self.expansion_size), b + (self.b_class_size / 2 + self.expansion_size))
 		top_right = (a + (self.a_class_size / 2 + self.expansion_size), b + (self.b_class_size / 2 + self.expansion_size))
@@ -296,18 +303,20 @@ class Colorizer(tf.keras.Model):
 		bot_left_center = self.bin_to_ab(bot_left_bin)
 		bot_right_center = self.bin_to_ab(bot_right_bin)
 
-		top_left_dist = np.linalg.norm(tuple(np.subtract(top_left, top_left_center)))
-		top_right_dist = np.linalg.norm(tuple(np.subtract(top_right, top_right_center)))
-		bot_left_dist = np.linalg.norm(tuple(np.subtract(bot_left, bot_left_center)))
-		bot_right_dist = np.linalg.norm(tuple(np.subtract(bot_right, bot_right_center)))
+		top_left_dist = tf.norm(tf.subtract(top_left, top_left_center))
+		top_right_dist = tf.norm(tf.subtract(top_right, top_right_center))
+		bot_left_dist = tf.norm(tf.subtract(bot_left, bot_left_center))
+		bot_right_dist = tf.norm(tf.subtract(bot_right, bot_right_center))
 
-		top_left_prob = norm.pdf(top_left_dist, loc=0, scale=self.bin_distance_stddev)
-		top_right_prob = norm.pdf(top_right_dist, loc=0, scale=self.bin_distance_stddev)
-		bot_left_prob = norm.pdf(bot_left_dist, loc=0, scale=self.bin_distance_stddev)
-		bot_right_prob = norm.pdf(bot_right_dist, loc=0, scale=self.bin_distance_stddev)
-		center_prob = norm.pdf(0, loc=0, scale=self.bin_distance_stddev)
+		dist = tfp.distributions.Normal(loc=0, scale=self.bin_distance_stddev)
 
-		if self.check_in_ab_range(top_left[0], top_left[1]):
+		top_left_prob = dist.prob(top_left_dist)
+		top_right_prob = dist.prob(top_right_dist)
+		bot_left_prob = dist.prob(bot_left_dist)
+		bot_right_prob = dist.prob(bot_right_dist)
+		center_prob = dist.prob(0)
+
+		if self.check_in_ab_range(tf.convert_to_tensor(top_left[0]), tf.convert_to_tensor(top_left[1])):
 			bin_distribution[top_left_bin] += top_left_prob
 
 		if self.check_in_ab_range(top_right[0], top_right[1]):
@@ -324,7 +333,7 @@ class Colorizer(tf.keras.Model):
 		return bin_distribution
 
 	def check_in_ab_range(self, a, b):
-		return self.a_min < a < self.a_max and self.b_min < b < self.b_max
+		return tf.math.less(self.a_min, a) and tf.math.less(a, self.a_max) and tf.math.less(self.b_min, b) and tf.math.less(b, self.b_max)
 
 	def call(self, inputs):
 		"""
@@ -454,19 +463,30 @@ def main():
 		checkpoint.restore(manager.latest_checkpoint)
 
 	training_inputs, all_train_channels = get_data('CIFAR_data_compressed/train')
-	# test_inputs, all_test_channels = get_data('CIFAR_data_compressed/test')
+	test_inputs, all_test_channels = get_data('CIFAR_data_compressed/test')
 	print("Finished importing data")
 
 	training_labels = all_train_channels[:, :, :, 1:]
-	# test_labels = all_test_channels[:, :, :, 1:]
+	test_labels = all_test_channels[:, :, :, 1:]
 
 	try:
 		# specify an invalid GPU device
 		with tf.device("/device:" + args.device):
 			if args.mode == 'train':
 				# getting bin distribution
-				model.init_bin_distribution(training_labels[:1, :, :, :])
+				batch_start = 0
+				batch = 0
+				while (batch_start + args.batch_size) < len(training_inputs):
+					batch += 1
+					batch_end = batch_start + args.batch_size
+					if batch_end > len(training_inputs):
+						batch_end = len(training_inputs)
+					model.init_bin_distribution(training_labels[batch_start:batch_end, :, :, :])
+					print("Initializing Distribution Batch {}/{}".format(batch, len(training_inputs)/args.batch_size))
+					batch_start += args.batch_size
 				model.init_w()
+				manager.save()
+				print("Saved Initializer")
 				# actual training
 				for e in range(args.num_epochs):
 					batch = 0
