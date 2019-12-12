@@ -2,3 +2,9 @@ __pycache__
 CIFAR_data_compressed
 train
 test
+checkpoints-namechanged/
+checkpoints/
+output (old).jpg
+output(black agaon).jpg
+output(new).jpg
+output(test).jpg

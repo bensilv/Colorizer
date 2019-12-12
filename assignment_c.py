@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import matplotlib
 matplotlib.use('Agg')
@@ -25,7 +26,7 @@ parser = argparse.ArgumentParser(description='Colorizer')
 parser.add_argument('--mode', type=str, default='test', help='Can be "train" or "test"')
 parser.add_argument('--device', type=str, default='GPU:0' if gpu_available else 'CPU:0',
                     help='specific the device of computation eg. CPU:0, GPU:0, GPU:1, GPU:2, ... ')
-parser.add_argument('--batch-size', type=int, default=64,
+parser.add_argument('--batch-size', type=int, default=10,
                     help='Sizes of image batches fed through the network')
 parser.add_argument('--num-epochs', type=int, default=10,
                     help='Number of passes through the training data to make before stopping')
@@ -57,8 +58,8 @@ class Colorizer(tf.keras.Model):
 		self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate1)
 
 		# LAB Colorscheme constants
-		self.num_a_partitions = tf.constant(20, dtype=tf.float32)
-		self.num_b_partitions = tf.constant(20, dtype=tf.float32)
+		self.num_a_partitions = 20
+		self.num_b_partitions = 20
 		self.a_min = tf.constant(-86.185, dtype=tf.float32)
 		self.a_max = tf.constant(98.254, dtype=tf.float32)
 		self.b_min = tf.constant(-107.863, dtype=tf.float32)
@@ -242,7 +243,7 @@ class Colorizer(tf.keras.Model):
 					v_blank[x,i,j] = self.v(z[x,i,j,:])
 		return -tf.tensordot(tf.convert_to_tensor(v_blank, dtype=tf.float32), summation_1, axes=3)
 
-	@tf.function
+	#@tf.function
 	def init_bin_distribution(self, data):
 		"""
 		Initializes self.bin_distribution to be the distribution for all bins over every image in the training set
@@ -258,7 +259,7 @@ class Colorizer(tf.keras.Model):
 		self.bin_distribution += tf.reduce_sum(tf.reshape(bin_distributions, [batch_size, r_size, c_size, self.num_classes]), axis=(0, 1, 2))
 		print("Finished init_bin_distribution")
 
-	@tf.function
+	#@tf.function
 	def calculate_bin_distribution(self, labels):
 		"""
 		Converts the input image from a,b values to a bin distribution using calculate_bin_distribution_pixel
@@ -384,7 +385,7 @@ def train(model, train_inputs, train_labels):
 		inputs = train_inputs[min_index:max_index, :, :, :]
 		labels = train_labels[min_index:max_index]
 		with tf.GradientTape() as tape:
-			predictions = model.call(inputs)
+			predictions = model.call(tf.cast(inputs, tf.float32))
 			loss = model.loss(predictions, labels)
 		gradients = tape.gradient(loss, model.trainable_variables)
 		model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
@@ -466,6 +467,7 @@ def main():
 	test_inputs, all_test_channels = get_data('CIFAR_data_compressed/test')
 	print("Finished importing data")
 
+	visualizer_images = all_test_channels
 	training_labels = all_train_channels[:, :, :, 1:]
 	test_labels = all_test_channels[:, :, :, 1:]
 
@@ -476,14 +478,14 @@ def main():
 				# getting bin distribution
 				batch_start = 0
 				batch = 0
-				while (batch_start + args.batch_size) < len(training_inputs):
+				while (batch_start + 1) < 10:
 					batch += 1
-					batch_end = batch_start + args.batch_size
+					batch_end = batch_start + 1
 					if batch_end > len(training_inputs):
 						batch_end = len(training_inputs)
 					model.init_bin_distribution(training_labels[batch_start:batch_end, :, :, :])
-					print("Initializing Distribution Batch {}/{}".format(batch, len(training_inputs)/args.batch_size))
-					batch_start += args.batch_size
+					print("Initializing Distribution Batch {}/{}".format(batch, 10/args.batch_size))
+					batch_start += 1
 				model.init_w()
 				manager.save()
 				print("Saved Initializer")
@@ -499,7 +501,7 @@ def main():
 						loss = train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
 						print("Epoch: {}/{} Batch: {}/{} Loss: {} Accuracy: {}".format(e + 1, args.num_epochs, batch, len(training_inputs)/args.batch_size, loss, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
 						batch_start += args.batch_size
-						if batch % 50 == 0:
+						if batch % 1 == 0:
 							manager.save()
 							print("Saved Batch!")
 			if args.mode == 'test':
@@ -520,7 +522,7 @@ def main():
 
 				predictions = model.call(test_inputs[0:5, :, :])
 
-				visualize_images(test_inputs[0:5, :, :], test_labels[0:5, :, :], predictions)
+				visualize_images(test_inputs[0:5, :, :], visualizer_images[0:5, :, :, :], tf.multiply(predictions, 10^1000000000000000))
 	except RuntimeError as e:
 		print(e)
 
