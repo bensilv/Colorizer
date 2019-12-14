@@ -28,14 +28,18 @@ def get_data(file_path):
     unpickled_file = unpickle(file_path)
     inputs = unpickled_file[b'data']
 
-    # inputs = inputs[indices]
+    # inputs are a set of 32 x 32 images from the CIFAR-10 datasest. Each has 3 channels of RGB.
     inputs = np.reshape(inputs, (-1, 3, 32, 32))
     inputs = np.transpose(inputs, (0, 2, 3, 1))
     inputs = inputs / float(255)
     inputs = inputs.astype('float32')
+    # use rgb2lab conversion to convert each image to the Lab space we use for colorizing (instead of RGB)
     for i in range(inputs.shape[0]):
         inputs[i] = color.rgb2lab(inputs[i])
+    # we will use the current inputs as our labels and then remove the color from our inputs
     labels = np.copy(inputs)
+    # This removes all channels from the inputs except the L channel, so they are now black and white
     inputs = inputs[:, :, :, 0]
-    inputs = np.expand_dims(inputs, axis=3) #converts from (num_images, 32,32) to (num_images, 32, 32, 1)
+    # converts inputs from shape (num_images, 32,32) to (num_images, 32, 32, 1)
+    inputs = np.expand_dims(inputs, axis=3)
     return inputs, labels

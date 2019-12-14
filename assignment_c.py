@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import matplotlib
+# comment out the following if running on a computer and trying to display final image visualizer
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from preprocess_c import get_data
@@ -21,12 +22,14 @@ from scipy.ndimage import gaussian_filter
 gpu_available = tf.test.is_gpu_available()
 print("GPU Available: ", gpu_available)
 
+# we used argparse to make defining hyperparameters easier. Running this with no parameters tests it, use --mode train to train
+# to get full accuracy on full test set use --full-test TRUE, by default we just visualize and do accuracy on 5 images
 parser = argparse.ArgumentParser(description='Colorizer')
 
 parser.add_argument('--mode', type=str, default='test', help='Can be "train" or "test"')
 parser.add_argument('--device', type=str, default='GPU:0' if gpu_available else 'CPU:0',
                     help='specific the device of computation eg. CPU:0, GPU:0, GPU:1, GPU:2, ... ')
-parser.add_argument('--batch-size', type=int, default=10,
+parser.add_argument('--batch-size', type=int, default=128,
                     help='Sizes of image batches fed through the network')
 parser.add_argument('--num-epochs', type=int, default=10,
                     help='Number of passes through the training data to make before stopping')
@@ -34,6 +37,12 @@ parser.add_argument('--display', type=bool, default=False,
                     help='False saves file, True displays')
 parser.add_argument('--full-test', type=bool, default=False,
                     help='True gets final accuracy')
+parser.add_argument('--bin-init-images', type=int, default=100,
+                    help='Number of images to initialize the bin distribution on')
+parser.add_argument('--bin-init-batch-size', type=int, default=10,
+                    help='Batch size for initializing the bin distribution on')
+parser.add_argument('--skip-bin-init', type=bool, default=False,
+                    help='Will load bin distribution from checkpoints instead for training if true')
 
 args = parser.parse_args()
 
@@ -43,10 +52,7 @@ if not args.display:
 class Colorizer(tf.keras.Model):
 	def __init__(self):
 		"""
-    This model class will contain the architecture for your CNN that 
-		classifies images. Do not modify the constructor, as doing so 
-		will break the autograder. We have left in variables in the constructor
-		for you to fill out, but you are welcome to change them if you'd like.
+    	This This defines the model for our colorizer. It mostly consists of sets of convolution layers.
 		"""
 		super(Colorizer, self).__init__()
 
@@ -70,7 +76,7 @@ class Colorizer(tf.keras.Model):
 		self.a_class_size = self.a_range / tf.dtypes.cast(self.num_a_partitions, tf.float32)
 		self.b_class_size = self.b_range / tf.dtypes.cast(self.num_b_partitions, tf.float32)
 
-		# other constants
+		# Bin constants
 		self.bin_to_ab_arr = self.init_bin_to_ab_array()
 		self.expansion_size = 0.0001
 		self.stdev = .04
@@ -347,52 +353,71 @@ class Colorizer(tf.keras.Model):
 	def accuracy(self, logits, labels):
 		"""
 		Calculates the model's prediction accuracy by comparing
-		logits to correct labels – no need to modify this.
-		:param logits: a matrix of size (num_inputs, self.num_classes); during training, this will be (batch_size, self.num_classes)
-		containing the result of multiple convolution and feed forward layers
-		:param labels: matrix of size (num_labels, self.num_classes) containing the answers, during training, this will be (batch_size, self.num_classes)
-
-		NOTE: DO NOT EDIT
+		logits over bins to correct labels
+		:param logits: a matrix of size (num_images, width, height, num_bins); This is the output of a call
+		:param labels: matrix of size (num_images, width, height, 2) contains labels with just ab channel
 		
 		:return: the accuracy of the model as a Tensor
 		"""
-		correct_predictions = tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1))
+		# represents how far predicted ab values can be from labels to be counted as correct
+		threshold = 5
+		# get ab values for predicted images from bins
+		final_images = self.h_function(logits)
+		# get difference between ab values of predicted images and labels and then take the abs value
+		diff = labels - final_images
+		abs = tf.abs(diff)
+		# if abs value is below a certain threshold count them as true
+		correct_predictions = abs < threshold
 		return tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
 
 
-def train(model, train_inputs, train_labels):
+def train(model, manager, epoch, train_inputs, train_labels):
 	"""
 	Trains the model on all of the inputs and labels for one epoch.
+	:param manager: to be used to save checkpoints
+	:param epoch: just used to print the epoch number
 	:param model: the initialized model to use for the forward pass and backward pass
 	:param train_inputs: train inputs (all inputs to use for training),
-	shape (num_inputs, width, height, num_channels)
+	shape (num_inputs, width, height, 1) These are the black and white inputs
 	:param train_labels: train labels (all labels to use for training),
-	shape (num_labels, num_classes)
+	shape (num_images, width, height, 2) images with ab channels only
 	:return: None
 	"""
+	# randomly shuffle images
 	num_examples = train_inputs.shape[0]
 	indices = range(num_examples)
 	indices = tf.random.shuffle(indices)
 	tf.gather(train_inputs, indices)
 	tf.gather(train_labels, indices)
 	train_inputs = tf.image.random_flip_left_right(train_inputs)
-	i = 0
-	min_index = i * args.batch_size
-	while min_index < num_examples:
-		max_index = min_index + args.batch_size
-		if max_index >= num_examples:
-			max_index = num_examples - 1
-		inputs = train_inputs[min_index:max_index, :, :, :]
-		labels = train_labels[min_index:max_index]
+
+	# batch training
+	batch = 0
+	batch_start = 0
+	while (batch_start + args.batch_size) < len(train_inputs):
+		batch += 1
+		batch_end = batch_start + args.batch_size
+		if batch_end > len(train_inputs):
+			batch_end = len(train_inputs)
 		with tf.GradientTape() as tape:
-			predictions = model.call(tf.cast(inputs, tf.float32))
-			loss = model.loss(predictions, labels)
+			predictions = model.call(tf.cast(train_inputs, tf.float32))
+			loss = model.loss(predictions, train_labels)
 		gradients = tape.gradient(loss, model.trainable_variables)
 		model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-		i += 1
-		min_index = i * args.batch_size
-	loss = model.loss(predictions, labels)
-	return loss
+		# print information at every batch
+		print("Epoch: {}/{} Batch: {}/{} Loss: {} Accuracy: {}".format(epoch + 1, args.num_epochs, batch,
+																	   len(train_inputs) / args.batch_size, loss,
+																	   model.accuracy(model.call(
+																		   train_inputs[batch_start:batch_end, :, :,
+																		   :]), train_labels[batch_start:batch_end,
+																				:, :, 1:3])))
+		batch_start += args.batch_size
+		# currently we save checkpoints after every batch
+		if batch % 1 == 0:
+			manager.save()
+			print("Saved Batch!")
+
+	return None
 
 
 def test(model, test_inputs, test_labels):
@@ -400,29 +425,38 @@ def test(model, test_inputs, test_labels):
 	Tests the model on the test inputs and labels. You should NOT randomly 
 	flip images or do any extra preprocessing.
 	:param test_inputs: test data (all images to be tested), 
-	shape (num_inputs, width, height, num_channels)
+	shape (num_inputs, width, height, 1) these are black and white images
 	:param test_labels: test labels (all corresponding labels),
-	shape (num_labels, num_classes)
-	:return: test accuracy - this can be the average accuracy across 
-	all batches or the sum as long as you eventually divide it by batch_size
+	shape (num_inputs, width, height, 2) just has ab channels
+	:return: test accuracy
 	"""
 	test_logits = model.call(test_inputs)
 	return model.accuracy(test_logits, test_labels)
 
 def visualize_images(bw_images, color_images, predictions):
+	"""
+	:param bw_images: train_inputs (num_images, 32, 32, 1) just has L channel
+	:param color_images: saved actual images (num_images, 32, 32, 3) has all Lab channels
+	:param predictions: predicted images (num_images, 32, 32, 2) has the a and b channels
+	:return: nothing, but saves jpg of output or displays it if --display TRUE is given
+	"""
 	num_images = bw_images.shape[0]
 
 	fig, axs = plt.subplots(nrows=3, ncols=num_images)
 	fig.suptitle("Images\n ")
+	# we must reformat the predicted black and white images
 	reformatted = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
 	reformatted_predictions = np.zeros([bw_images.shape[0], bw_images.shape[1], bw_images.shape[2], 3])
 	for i in range(bw_images.shape[0]):
 		for w in range(bw_images.shape[1]):
 			for h in range(bw_images.shape[2]):
+				# makes black and white image now have 3 channels (where a and b are 0)
 				reformatted[i, w, h, 0] = bw_images[i, w, h, 0]
+				# reformat predictions to add back L channel
 				reformatted_predictions[i, w, h, 0] = bw_images[i, w, h, 0]
 				reformatted_predictions[i, w, h, 1] = predictions[i, w, h, 0]
 				reformatted_predictions[i, w, h, 2] = predictions[i, w, h, 1]
+	# This part is what actually displays the images
 	for ind, ax in enumerate(axs):
 		for i in range(len(ax)):
 			a = ax[i]
@@ -441,6 +475,7 @@ def visualize_images(bw_images, color_images, predictions):
 	if args.display:
 		plt.show()
 	else:
+		# saves file as output.jpg
 		plt.savefig('output.jpg', bbox_inches='tight')
 
 
@@ -459,14 +494,16 @@ def main():
 	checkpoint = tf.train.Checkpoint(model=model)
 	manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
 
-	if args.mode == 'test':
-		# restores the latest checkpoint using from the manager
+	if args.mode == 'test' or args.skip_bin_init:
+		# restores the latest checkpoint using from the manager if we are testing
 		checkpoint.restore(manager.latest_checkpoint)
 
+	# load data
 	training_inputs, all_train_channels = get_data('CIFAR_data_compressed/train')
 	test_inputs, all_test_channels = get_data('CIFAR_data_compressed/test')
 	print("Finished importing data")
 
+	# save full 3 channel images for visualizer and convert labels to just have ab channels
 	visualizer_images = all_test_channels
 	training_labels = all_train_channels[:, :, :, 1:]
 	test_labels = all_test_channels[:, :, :, 1:]
@@ -475,39 +512,34 @@ def main():
 		# specify an invalid GPU device
 		with tf.device("/device:" + args.device):
 			if args.mode == 'train':
-				# getting bin distribution
-				batch_start = 0
-				batch = 0
-				while (batch_start + 1) < 10:
-					batch += 1
-					batch_end = batch_start + 1
-					if batch_end > len(training_inputs):
-						batch_end = len(training_inputs)
-					model.init_bin_distribution(training_labels[batch_start:batch_end, :, :, :])
-					print("Initializing Distribution Batch {}/{}".format(batch, 10/args.batch_size))
-					batch_start += 1
-				model.init_w()
-				manager.save()
-				print("Saved Initializer")
-				# actual training
-				for e in range(args.num_epochs):
-					batch = 0
+				if not args.skip_bin_init:
+					# getting bin distribution
 					batch_start = 0
-					while (batch_start + args.batch_size) < len(training_inputs):
+					batch = 0
+					# batch the bin distribution initialization (this isn't training, just initializing our bin_distribution
+					# array on the dataset)
+					while (batch_start + args.bin_init_batch_size) < args.bin_init_images:
 						batch += 1
-						batch_end = batch_start + args.batch_size
+						batch_end = batch_start + args.bin_init_batch_size
 						if batch_end > len(training_inputs):
 							batch_end = len(training_inputs)
-						loss = train(model, training_inputs[batch_start:batch_end, :, :, :], training_labels[batch_start:batch_end, :, :, :])
-						print("Epoch: {}/{} Batch: {}/{} Loss: {} Accuracy: {}".format(e + 1, args.num_epochs, batch, len(training_inputs)/args.batch_size, loss, model.accuracy(model.call(training_inputs[batch_start:batch_end, :, :, :]), training_labels[batch_start:batch_end, :, :, 1:3])))
-						batch_start += args.batch_size
-						if batch % 1 == 0:
-							manager.save()
-							print("Saved Batch!")
+						# call function to init the bin distribution
+						model.init_bin_distribution(training_labels[batch_start:batch_end, :, :, :])
+						print("Initializing Distribution Batch {}/{}".format(batch, args.bin_init_images/args.bin_init_batch_size))
+						batch_start += args.bin_init_batch_size
+					model.init_w()
+					# save a checkpoint after this finishes
+					manager.save()
+					print("Saved Initializer")
+				# actual training
+				# loop through epochs
+				for e in range(args.num_epochs):
+					train(model, manager, e, training_inputs, training_labels)
+			# Run this if testing
 			if args.mode == 'test':
 				if args.full_test:
 					print("Testing!")
-
+					# We batch testing
 					batch_start = 0
 					total = 0
 					while (batch_start + args.batch_size) < len(test_inputs):
@@ -519,10 +551,12 @@ def main():
 						batch_start += args.batch_size
 
 					print("Final Accuracy: {}".format(total / len(test_inputs)))
-
+				# If we aren't running a full test (which we don't do by default) just test on 5 images and visualize them
+				if not args.full_test:
+					print("Final Accuracy: {}".format(test(model, test_inputs[0:5, :, :], training_labels[0:5, :, :, :])))
 				predictions = model.call(test_inputs[0:5, :, :])
-
-				visualize_images(test_inputs[0:5, :, :], visualizer_images[0:5, :, :, :], tf.multiply(predictions, 10^1000000000000000))
+				# visualizer outputs .jpg or displays them, depending on what is specified with --display
+				visualize_images(test_inputs[0:5, :, :], visualizer_images[0:5, :, :, :], model.h_function(predictions))
 	except RuntimeError as e:
 		print(e)
 
