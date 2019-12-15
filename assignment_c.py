@@ -174,6 +174,12 @@ class Colorizer(tf.keras.Model):
 
 
 	def h_function(self, image):
+		"""
+		Maps from predicted bin space to ab space
+		:param: image
+		:return: corresponding bin id
+		"""
+		#Calculate probabilities and dot with the conversion from bin to ab summing over pixels
 		probs = tf.nn.softmax(image / self.temperature)
 		ab = tf.tensordot(probs, self.bin_to_ab_arr, axes=((3), (0)))
 		return ab
@@ -185,8 +191,10 @@ class Colorizer(tf.keras.Model):
 		:param b color component
 		:return: corresponding bin id
 		"""
+		#calculate fraction of ab space through which this falls
 		a_index = (a - self.a_min) / self.a_range
 		b_index = (b - self.b_min) / self.b_range
+		#Multiply by partition size and sum to create bin space
 		bin_num = int(tf.dtypes.cast(a_index, tf.float32) * self.num_a_partitions * self.num_b_partitions + tf.dtypes.cast(b_index, tf.float32) * self.num_b_partitions)
 		return bin_num
 
@@ -196,8 +204,10 @@ class Colorizer(tf.keras.Model):
 		:param bin_val: bin number (which is 0-indexed)
 		:return: corresponding ab value as a tuple (a, b)
 		"""
+		#Calculate the index for a and b
 		a_index = tf.dtypes.cast(tf.dtypes.cast(bin_id, tf.float32) / self.num_a_partitions, tf.float32)
 		b_index = tf.dtypes.cast(tf.dtypes.cast(bin_id, tf.float32) % self.num_a_partitions, tf.float32)
+		#Center the index and shift by min value
 		a = (a_index + 0.5) / self.num_a_partitions * self.a_range + self.a_min
 		b = (b_index + 0.5) / self.num_b_partitions * self.b_range + self.b_min
 		return tf.convert_to_tensor(a), tf.convert_to_tensor(b)
@@ -206,7 +216,9 @@ class Colorizer(tf.keras.Model):
 		"""
 		Fill in the values for the bin_to_ab array
 		"""
+		#Create a temp array for storage
 		temp_arr = np.zeros(shape=(self.num_a_partitions * self.num_b_partitions, 2), dtype=np.float32)
+		#Fill the array with ab values
 		for i in range(temp_arr.shape[0]):
 			a, b = self.bin_to_ab(i)
 			temp_arr[i][0] = a
@@ -217,8 +229,10 @@ class Colorizer(tf.keras.Model):
 		"""
 		Initializes self.w field based on the formula from the paper (page 6, equation 4)
 		"""
+		#Using the formula on page 6, we form, weight, and normalize w
 		w = np.reciprocal(self.bin_distribution * (1 - self.lam) + self.lam / self.num_classes)
 		unbalanced_expectation = np.dot(self.bin_distribution, w)
+		#Gaussian filter is applied to the output
 		self.w = gaussian_filter(w / unbalanced_expectation, sigma=self.gaussian_filter_stddev)
 
 	def v(self, z):
@@ -227,6 +241,7 @@ class Colorizer(tf.keras.Model):
 		:param z, (batch_size, h, w, q) dimension, bin distribution for all images in a batch
 		:return: weight to multiply by for the most likely bin
 		"""
+		#Get the max position in the distribution and return the value in w at that position
 		pos = tf.math.argmax(z)
 		return self.w[pos]
 
@@ -237,16 +252,21 @@ class Colorizer(tf.keras.Model):
 		:param predictions, (batch_size, h, w, q) dimension matrix of predicted
 		:return: loss
 		"""
+		#Calculate the distribution for the labels
 		z = self.calculate_bin_distribution(labels)
 		num_images = predictions.shape[0]
 		h = predictions.shape[1]
 		w = predictions.shape[2]
+		#Set up a blank v array
 		v_blank = np.zeros(shape=(predictions.shape[:3]))
+		#Form the right-most summation from the paper
 		summation_1 = tf.keras.losses.categorical_crossentropy(z, predictions)
+		#Form the v values for all pixels
 		for x in range(num_images):
 			for i in range(h):
 				for j in range(w):
 					v_blank[x,i,j] = self.v(z[x,i,j,:])
+		#Dot over them to form the entire summation
 		return -tf.tensordot(tf.convert_to_tensor(v_blank, dtype=tf.float32), summation_1, axes=3)
 
 	#@tf.function
@@ -255,6 +275,7 @@ class Colorizer(tf.keras.Model):
 		Initializes self.bin_distribution to be the distribution for all bins over every image in the training set
 		:param data, (training_set_size, h, w, 2) dimension matrix of all images in the training set
 		"""
+		#Initialized the distribution using all bins in all images
 		batch_size = data.shape[0]
 		r_size = data.shape[1]
 		c_size = data.shape[2]
@@ -278,7 +299,9 @@ class Colorizer(tf.keras.Model):
 		r_size = labels.shape[1]
 		c_size = labels.shape[2]
 		labels = tf.reshape(labels, [-1, 2])
+		#Form the bun distribution for the given pixels
 		bin_distributions = tf.map_fn(lambda x: self.calculate_bin_distribution_pixel(x[0], x[1]), labels, parallel_iterations=10)
+		#Reshape for normal shape
 		bin_distributions = tf.reshape(bin_distributions, [batch_size, r_size, c_size, self.num_classes])
 		print("Finished calculate_bin_distribution")
 		return bin_distributions
@@ -294,22 +317,26 @@ class Colorizer(tf.keras.Model):
 		"""
 		bin_distribution = np.zeros(shape=[self.num_classes], dtype=np.float32)
 
+		#Get the values of all regions in the boxed off space
 		top_left = (a - (self.a_class_size / 2 + self.expansion_size), b + (self.b_class_size / 2 + self.expansion_size))
 		top_right = (a + (self.a_class_size / 2 + self.expansion_size), b + (self.b_class_size / 2 + self.expansion_size))
 		bot_left = (a - (self.a_class_size / 2 + self.expansion_size),b - (self.b_class_size / 2 + self.expansion_size))
 		bot_right = (a + (self.a_class_size / 2 + self.expansion_size), b - (self.b_class_size / 2 + self.expansion_size))
 
+		#Calculate the bins
 		center_bin = self.ab_to_bin(a, b)
 		top_left_bin = self.ab_to_bin(top_left[0], top_left[1])
 		top_right_bin = self.ab_to_bin(top_right[0], top_right[1])
 		bot_left_bin = self.ab_to_bin(bot_left[0], bot_left[1])
 		bot_right_bin = self.ab_to_bin(bot_right[0], bot_right[1])
 
+		#Retrieve the ab values for those bins
 		top_left_center = self.bin_to_ab(top_left_bin)
 		top_right_center = self.bin_to_ab(top_right_bin)
 		bot_left_center = self.bin_to_ab(bot_left_bin)
 		bot_right_center = self.bin_to_ab(bot_right_bin)
 
+		#Calculate the distance to the ab centers from the original point
 		top_left_dist = tf.norm(tf.subtract(top_left, top_left_center))
 		top_right_dist = tf.norm(tf.subtract(top_right, top_right_center))
 		bot_left_dist = tf.norm(tf.subtract(bot_left, bot_left_center))
@@ -317,12 +344,14 @@ class Colorizer(tf.keras.Model):
 
 		dist = tfp.distributions.Normal(loc=0, scale=self.bin_distance_stddev)
 
+		#Weight based on these distances
 		top_left_prob = dist.prob(top_left_dist)
 		top_right_prob = dist.prob(top_right_dist)
 		bot_left_prob = dist.prob(bot_left_dist)
 		bot_right_prob = dist.prob(bot_right_dist)
 		center_prob = dist.prob(0)
 
+		#Check for edge cases in the bins
 		if self.check_in_ab_range(tf.convert_to_tensor(top_left[0]), tf.convert_to_tensor(top_left[1])):
 			bin_distribution[top_left_bin] += top_left_prob
 
@@ -340,6 +369,11 @@ class Colorizer(tf.keras.Model):
 		return bin_distribution
 
 	def check_in_ab_range(self, a, b):
+		"""
+		Checks if an ab value is in range
+		:param a, b: a,b value passed in
+		:return: boolean representing whether it's in range
+		"""
 		return tf.math.less(self.a_min, a) and tf.math.less(a, self.a_max) and tf.math.less(self.b_min, b) and tf.math.less(b, self.b_max)
 
 	def call(self, inputs):
