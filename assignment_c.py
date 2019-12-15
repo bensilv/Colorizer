@@ -79,7 +79,7 @@ class Colorizer(tf.keras.Model):
 		# Bin constants
 		self.bin_to_ab_arr = self.init_bin_to_ab_array()
 		self.expansion_size = 0.0001
-		self.stdev = .04
+		self.stdev = 0.04
 		self.bin_distribution = tf.zeros(shape=[self.num_classes], dtype=tf.float32)
 		self.bin_distance_stddev = 5
 		self.gaussian_filter_stddev = 5
@@ -400,8 +400,8 @@ def train(model, manager, epoch, train_inputs, train_labels):
 		if batch_end > len(train_inputs):
 			batch_end = len(train_inputs)
 		with tf.GradientTape() as tape:
-			predictions = model.call(tf.cast(train_inputs, tf.float32))
-			loss = model.loss(predictions, train_labels)
+			predictions = model.call(tf.cast(train_inputs[batch_start:batch_end, :, :, :], tf.float32))
+			loss = model.loss(predictions, train_labels[batch_start:batch_end, :, :, :])
 		gradients = tape.gradient(loss, model.trainable_variables)
 		model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 		# print information at every batch
